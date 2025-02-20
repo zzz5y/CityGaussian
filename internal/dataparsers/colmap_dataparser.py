@@ -174,12 +174,13 @@ class ColmapDataParser(DataParser):
         cameras = colmap_utils.read_cameras_binary(os.path.join(sparse_model_dir, "cameras.bin"))
         images = colmap_utils.read_images_binary(os.path.join(sparse_model_dir, "images.bin"))
 
-        # sort images
-        images = dict(sorted(images.items(), key=lambda item: item[0]))
+
 
         # filter images
-        selected_image_ids = None
-        selected_image_names = None
+        # selected_image_ids = None
+        # selected_image_names = None
+        
+        
         if self.params.image_list is not None:
             # load image list
             selected_image_ids = {}
@@ -285,6 +286,7 @@ class ColmapDataParser(DataParser):
 
         # parse colmap sparse model
         for idx, key in enumerate(images):
+            #if idx %20==0:
             # extract image and its correspond camera
             extrinsics = images[key]
             intrinsics = cameras[extrinsics.camera_id]
@@ -472,7 +474,8 @@ class ColmapDataParser(DataParser):
             xyz = basic_pcd.points
             rgb = basic_pcd.colors
             print("load {} points from {}".format(xyz.shape[0], self.params.ply_file))
-
+        #image_set[0]=image_set[0][::20]
+        #image_set[1]=image_set[1][::20]
         # print information
         print("[colmap dataparser] train set images: {}, val set images: {}, loaded mask: {}".format(
             len(image_set[0]),

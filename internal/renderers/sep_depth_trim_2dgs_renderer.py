@@ -86,6 +86,11 @@ class SepDepthTrim2DGSRenderer(Renderer):
         means2D = screenspace_points
         opacity = pc.get_opacity
 
+        # 检查输入点云
+        debug_tensor_info("pc.get_xyz", pc.get_xyz)
+        debug_tensor_info("screenspace_points", screenspace_points)
+        debug_tensor_info("pc.get_opacity", pc.get_opacity)
+
         # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
         # scaling / rotation by the rasterizer.
         cov3D_precomp = None
@@ -114,7 +119,12 @@ class SepDepthTrim2DGSRenderer(Renderer):
             return transmittance
         else:
             rendered_image, radii, allmap = output
-
+        
+        debug_tensor_info("rendered_image", rendered_image)
+        debug_tensor_info("radii", radii)
+        for idx, tensor in enumerate(allmap):
+            debug_tensor_info(f"allmap[{idx}]", tensor)
+        
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
         rets = {
@@ -287,3 +297,10 @@ class SepDepthTrim2DGSRenderer(Renderer):
             'surf_depth': RendererOutputInfo("surf_depth", type=RendererOutputTypes.GRAY),
             'surf_normal': RendererOutputInfo("surf_normal", type=RendererOutputTypes.NORMAL_MAP),
         }
+
+
+def debug_tensor_info(name, tensor):
+    if tensor is not None:
+        print(f"{name}: shape = {tensor.shape}, dtype = {tensor.dtype}, device = {tensor.device}")
+    else:
+        print(f"{name} is None")

@@ -26,3 +26,5 @@ notebooks_dumped
 clusters
 segments
 **/__pycache__
+
+tmp

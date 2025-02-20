@@ -185,3 +185,30 @@ class Vanilla2DGSRenderer(Renderer):
             'surf_depth': RendererOutputInfo("surf_depth", type=RendererOutputTypes.GRAY),
             'surf_normal': RendererOutputInfo("surf_normal", type=RendererOutputTypes.NORMAL_MAP),
         }
+
+    def debug_render_sizes(viewpoint_camera, pc, bg_color, renderer, scaling_modifier=1.0):
+        # 打印输入数据尺寸
+        print("=== 渲染前输入尺寸 ===")
+        print("pc.get_xyz:", pc.get_xyz.shape)
+        # 如果点云有缩放和旋转信息，也打印出来
+        if hasattr(pc, 'get_scaling'):
+            print("pc.get_scaling:", pc.get_scaling.shape)
+        if hasattr(pc, 'get_rotation'):
+            print("pc.get_rotation:", pc.get_rotation.shape)
+        # 如果有预计算的特征/颜色，也可打印
+        if hasattr(pc, 'get_features'):
+            print("pc.get_features:", pc.get_features.shape)
+        print("背景颜色 bg_color:", bg_color.shape)
+
+        # 调用渲染函数
+        outputs = renderer.forward(viewpoint_camera, pc, bg_color, scaling_modifier=scaling_modifier)
+
+        # 打印渲染器输出的各个张量的尺寸
+        print("\n=== 渲染后输出尺寸 ===")
+        for key, value in outputs.items():
+            if isinstance(value, torch.Tensor):
+                print(f"{key}: {value.shape}")
+            else:
+                print(f"{key}: {value}")
+        return outputs
+

@@ -20,7 +20,7 @@ def cli(args: ArgsType = None):
             "devices": 1,
             # "logger": "TensorBoardLogger",
             "num_sanity_val_steps": 1,
-            # "max_epochs": -1,
+            "max_epochs": 8,
             "max_steps": 30_000,
             "use_distributed_sampler": False,  # use custom ddp sampler
             "enable_checkpointing": False,

@@ -50,6 +50,7 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.image_set)
 
     def get_image(self, index) -> Tuple[str, torch.Tensor, Optional[torch.Tensor]]:
+        #print('self.image_set.image_paths[index]: ', self.image_set.image_paths[index])
         if self.image_set.image_paths[index] is None:
             return self.image_set.image_names[index], None, None
 
@@ -156,7 +157,10 @@ class CacheDataLoader(torch.utils.data.DataLoader):
         super().__init__(dataset=dataset, **kwargs)
 
         self.shuffle = shuffle
-        self.max_cache_num = max_cache_num
+        
+        #self.max_cache_num = max_cache_num
+        self.max_cache_num = 64
+        print('max_cache_num: ', max_cache_num)
 
         # image indices to use
         self.indices = list(range(len(self.dataset)))

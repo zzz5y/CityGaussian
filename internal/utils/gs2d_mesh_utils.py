@@ -9,15 +9,90 @@ import trimesh
 import open3d as o3d
 from skimage import measure
 from tqdm.auto import tqdm
+import gc
+import os
 
+from torch.utils.data import DataLoader
 
 class GS2DMeshUtils:
+    
+    '''
     @classmethod
     @torch.no_grad()
     def render_views(cls, model, renderer, cameras: Iterable, bg_color: torch.Tensor):
         rgbmaps = []
         depthmaps = []
 
+        save_dir="./tmp"
+        # Ensure the save directory exists
+        os.makedirs(save_dir, exist_ok=True)
+        
+
+        for i, viewpoint_cam in tqdm(enumerate(cameras), total=len(cameras), desc="Rendering RGB and depth maps"):
+            
+            # 将相机数据移动到GPU（假设viewpoint_cam有to方法）
+            viewpoint_cam_gpu = viewpoint_cam.to_device('cuda')
+            
+            render_pkg = renderer(viewpoint_cam_gpu, model, bg_color)
+            rgb = render_pkg['render']
+            # alpha = render_pkg['rend_alpha']
+            # normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
+            depth = render_pkg['surf_depth']
+            # depth_normal = render_pkg['surf_normal']
+            # 释放GPU内存
+            
+            # del render_pkg
+            # torch.cuda.empty_cache()  # 可选，根据内存情况使用
+            
+            rgb_cpu = rgb.cpu()
+            depth_cpu = depth.cpu()
+            
+            # Save RGB tensor
+            rgb_filename = os.path.join(save_dir, f'rgb_{i:04d}.pt')
+            torch.save(rgb_cpu, rgb_filename)
+
+            # Save depth tensor
+            depth_filename = os.path.join(save_dir, f'depth_{i:04d}.pt')
+            torch.save(depth_cpu, depth_filename)
+            
+            # 清理当前批次的 GPU 内存
+            del viewpoint_cam_gpu,render_pkg, rgb, depth, rgb_cpu, depth_cpu
+            torch.cuda.empty_cache()
+            
+            # 保存渲染结果              
+            #rgbmaps.append(rgb_cpu)
+            #depthmaps.append(depth_cpu)
+            # self.alphamaps.append(alpha.cpu())
+            # self.normals.append(normal.cpu())
+            # self.depth_normals.append(depth_normal.cpu())
+
+        #return rgbmaps, depthmaps
+        # batch_size = 2  # 适当调整 batch_size
+        # for i in tqdm(range(0, len(cameras), batch_size), desc="Rendering RGB and depth maps"):
+        #     batch_cams = cameras[i:i + batch_size]
+        #     for viewpoint_cam in batch_cams:
+        #         # 只渲染时不需要计算图
+        #         with torch.no_grad():
+        #             torch.cuda.memory_summary()
+        #             render_pkg = renderer(viewpoint_cam, model, bg_color)
+        #             rgbmaps.append(render_pkg['render'].detach().cpu())
+        #             depthmaps.append(render_pkg['surf_depth'].detach().cpu())
+                    
+        #             del render_pkg['render'], render_pkg['surf_depth']
+        #             del render_pkg
+                    
+        #             gc.collect()
+        #             torch.cuda.empty_cache()
+    '''
+
+    @classmethod
+    @torch.no_grad()
+    def render_views_with_tmp(cls, model, renderer, cameras: Iterable, bg_color: torch.Tensor,tmp_path):
+        # 这里改为将列表直接保存起来，后面再一一读取，不然内存不够
+        rgbmaps = []
+        depthmaps = []
+        # Ensure the save directory exists
+        os.makedirs(tmp_path, exist_ok=True)
         for i, viewpoint_cam in tqdm(enumerate(cameras), total=len(cameras), desc="Rendering RGB and depth maps"):
             render_pkg = renderer(viewpoint_cam, model, bg_color)
             rgb = render_pkg['render']
@@ -25,14 +100,23 @@ class GS2DMeshUtils:
             # normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
             depth = render_pkg['surf_depth']
             # depth_normal = render_pkg['surf_normal']
-            rgbmaps.append(rgb.cpu())
-            depthmaps.append(depth.cpu())
+            
+            rgb.cpu()
+            depth.cpu()
+            rgb_path = os.path.join(tmp_path, f"rgb_{i:05d}.pt")
+            depth_path = os.path.join(tmp_path, f"depth_{i:05d}.pt")
+            torch.save(rgb, rgb_path)
+            torch.save(depth, depth_path)
+            del render_pkg, rgb, depth
+            torch.cuda.empty_cache()
+            # rgbmaps.append(rgb.cpu())
+            # depthmaps.append(depth.cpu())
             # self.alphamaps.append(alpha.cpu())
             # self.normals.append(normal.cpu())
             # self.depth_normals.append(depth_normal.cpu())
 
         return rgbmaps, depthmaps
-
+    
     @classmethod
     @torch.no_grad()
     def estimate_bounding_sphere(cls, cameras: Iterable):
@@ -141,41 +225,140 @@ class GS2DMeshUtils:
 
         return combined
 
+    # @classmethod
+    # @torch.no_grad()
+    # def extract_mesh_unbounded(cls, maps, bound, cameras: Iterable, model, resolution: int = 1024):
+    #     """
+    #     Experimental features, extracting meshes from unbounded scenes, not fully test across datasets. 
+    #     return o3d.mesh
+    #     """
+    #     def contract(x):
+    #         mag = torch.linalg.norm(x, ord=2, dim=-1)[..., None]
+    #         return torch.where(mag < 1, x, (2 - (1 / mag)) * (x / mag))
+
+    #     def uncontract(y):
+    #         mag = torch.linalg.norm(y, ord=2, dim=-1)[..., None]
+    #         return torch.where(mag < 1, y, (1 / (2 - mag) * (y / mag)))
+
+    #     def compute_sdf_perframe(i, points, depthmap, rgbmap, viewpoint_cam):
+    #         """
+    #             compute per frame sdf
+    #         """
+    #         new_points = torch.cat([points, torch.ones_like(points[..., :1])], dim=-1) @ viewpoint_cam.full_projection
+    #         z = new_points[..., -1:]
+    #         pix_coords = (new_points[..., :2] / new_points[..., -1:])
+    #         mask_proj = ((pix_coords > -1.) & (pix_coords < 1.) & (z > 0)).all(dim=-1)
+    #         sampled_depth = torch.nn.functional.grid_sample(depthmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(-1, 1)
+    #         sampled_rgb = torch.nn.functional.grid_sample(rgbmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(3, -1).T
+    #         sdf = (sampled_depth - z)
+    #         return sdf, sampled_rgb, mask_proj
+
+    #     def compute_unbounded_tsdf(samples, inv_contraction, voxel_size, return_rgb=False):
+    #         """
+    #             Fusion all frames, perform adaptive sdf_funcation on the contract spaces.
+    #         """
+    #         if inv_contraction is not None:
+    #             mask = torch.linalg.norm(samples, dim=-1) > 1
+    #             # adaptive sdf_truncation
+    #             sdf_trunc = 5 * voxel_size * torch.ones_like(samples[:, 0])
+    #             sdf_trunc[mask] *= 1 / (2 - torch.linalg.norm(samples, dim=-1)[mask].clamp(max=1.9))
+    #             samples = inv_contraction(samples)
+    #         else:
+    #             sdf_trunc = 5 * voxel_size
+
+    #         tsdfs = torch.ones_like(samples[:, 0]) * 1
+    #         rgbs = torch.zeros((samples.shape[0], 3)).cuda()
+
+    #         weights = torch.ones_like(samples[:, 0])
+    #         for i, viewpoint_cam in tqdm(enumerate(cameras), total=len(cameras), desc="TSDF integration progress"):
+    #             sdf, rgb, mask_proj = compute_sdf_perframe(i, samples,
+    #                                                        depthmap=depthmaps[i],
+    #                                                        rgbmap=rgbmaps[i],
+    #                                                        viewpoint_cam=cameras[i],
+    #                                                        )
+
+    #             # volume integration
+    #             sdf = sdf.flatten()
+    #             mask_proj = mask_proj & (sdf > -sdf_trunc)
+    #             sdf = torch.clamp(sdf / sdf_trunc, min=-1.0, max=1.0)[mask_proj]
+    #             w = weights[mask_proj]
+    #             wp = w + 1
+    #             tsdfs[mask_proj] = (tsdfs[mask_proj] * w + sdf) / wp
+    #             rgbs[mask_proj] = (rgbs[mask_proj] * w[:, None] + rgb[mask_proj]) / wp[:, None]
+    #             # update weight
+    #             weights[mask_proj] = wp
+
+    #         if return_rgb:
+    #             return tsdfs, rgbs
+
+    #         return tsdfs
+
+    #     rgbmaps, depthmaps = maps
+    #     center, radius = bound
+
+    #     def normalize(x): return (x - center) / radius
+    #     def unnormalize(x): return (x * radius) + center
+    #     def inv_contraction(x): return unnormalize(uncontract(x))
+
+    #     N = resolution
+    #     voxel_size = (radius * 2 / N)
+    #     print(f"Computing sdf gird resolution {N} x {N} x {N}")
+    #     print(f"Define the voxel_size as {voxel_size}")
+    #     def sdf_function(x): return compute_unbounded_tsdf(x, inv_contraction, voxel_size)
+    #     R = contract(normalize(model.get_xyz)).norm(dim=-1).cpu().numpy()
+    #     R = np.quantile(R, q=0.95)
+    #     R = min(R + 0.01, 1.9)
+
+    #     mesh = cls.marching_cubes_with_contraction(
+    #         sdf=sdf_function,
+    #         bounding_box_min=(-R, -R, -R),
+    #         bounding_box_max=(R, R, R),
+    #         level=0,
+    #         resolution=N,
+    #         inv_contraction=inv_contraction,
+    #     )
+
+    #     # coloring the mesh
+    #     torch.cuda.empty_cache()
+    #     mesh = mesh.as_open3d
+    #     print("texturing mesh ... ")
+    #     _, rgbs = compute_unbounded_tsdf(torch.tensor(np.asarray(mesh.vertices)).float().cuda(), inv_contraction=None, voxel_size=voxel_size, return_rgb=True)
+    #     mesh.vertex_colors = o3d.utility.Vector3dVector(rgbs.cpu().numpy())
+    #     return mesh
+
     @classmethod
     @torch.no_grad()
-    def extract_mesh_unbounded(cls, maps, bound, cameras: Iterable, model, resolution: int = 1024):
+    def extract_mesh_unbounded(cls, maps, bound, cameras, model, resolution=1024):
         """
-        Experimental features, extracting meshes from unbounded scenes, not fully test across datasets. 
-        return o3d.mesh
+        提取无界场景的网格，返回 o3d.mesh 对象。
         """
         def contract(x):
-            mag = torch.linalg.norm(x, ord=2, dim=-1)[..., None]
+            mag = torch.linalg.norm(x, ord=2, dim=-1, keepdim=True)
             return torch.where(mag < 1, x, (2 - (1 / mag)) * (x / mag))
 
         def uncontract(y):
-            mag = torch.linalg.norm(y, ord=2, dim=-1)[..., None]
-            return torch.where(mag < 1, y, (1 / (2 - mag) * (y / mag)))
+            mag = torch.linalg.norm(y, ord=2, dim=-1, keepdim=True)
+            return torch.where(mag < 1, y, (1 / (2 - mag)) * (y / mag))
 
         def compute_sdf_perframe(i, points, depthmap, rgbmap, viewpoint_cam):
             """
-                compute per frame sdf
+            计算每帧的 SDF。
             """
             new_points = torch.cat([points, torch.ones_like(points[..., :1])], dim=-1) @ viewpoint_cam.full_projection
             z = new_points[..., -1:]
             pix_coords = (new_points[..., :2] / new_points[..., -1:])
             mask_proj = ((pix_coords > -1.) & (pix_coords < 1.) & (z > 0)).all(dim=-1)
-            sampled_depth = torch.nn.functional.grid_sample(depthmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(-1, 1)
-            sampled_rgb = torch.nn.functional.grid_sample(rgbmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(3, -1).T
+            sampled_depth = torch.nn.functional.grid_sample(depthmap[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(-1, 1)
+            sampled_rgb = torch.nn.functional.grid_sample(rgbmap[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(3, -1).T
             sdf = (sampled_depth - z)
             return sdf, sampled_rgb, mask_proj
 
         def compute_unbounded_tsdf(samples, inv_contraction, voxel_size, return_rgb=False):
             """
-                Fusion all frames, perform adaptive sdf_funcation on the contract spaces.
+            融合所有帧，在收缩空间上执行自适应 SDF 函数。
             """
             if inv_contraction is not None:
                 mask = torch.linalg.norm(samples, dim=-1) > 1
-                # adaptive sdf_truncation
                 sdf_trunc = 5 * voxel_size * torch.ones_like(samples[:, 0])
                 sdf_trunc[mask] *= 1 / (2 - torch.linalg.norm(samples, dim=-1)[mask].clamp(max=1.9))
                 samples = inv_contraction(samples)
@@ -183,17 +366,11 @@ class GS2DMeshUtils:
                 sdf_trunc = 5 * voxel_size
 
             tsdfs = torch.ones_like(samples[:, 0]) * 1
-            rgbs = torch.zeros((samples.shape[0], 3)).cuda()
-
+            rgbs = torch.zeros((samples.shape[0], 3), device=samples.device)
             weights = torch.ones_like(samples[:, 0])
-            for i, viewpoint_cam in tqdm(enumerate(cameras), total=len(cameras), desc="TSDF integration progress"):
-                sdf, rgb, mask_proj = compute_sdf_perframe(i, samples,
-                                                           depthmap=depthmaps[i],
-                                                           rgbmap=rgbmaps[i],
-                                                           viewpoint_cam=cameras[i],
-                                                           )
 
-                # volume integration
+            for i, viewpoint_cam in tqdm(enumerate(cameras), total=len(cameras), desc="TSDF integration progress"):
+                sdf, rgb, mask_proj = compute_sdf_perframe(i, samples, depthmaps[i], rgbmaps[i], viewpoint_cam)
                 sdf = sdf.flatten()
                 mask_proj = mask_proj & (sdf > -sdf_trunc)
                 sdf = torch.clamp(sdf / sdf_trunc, min=-1.0, max=1.0)[mask_proj]
@@ -201,7 +378,6 @@ class GS2DMeshUtils:
                 wp = w + 1
                 tsdfs[mask_proj] = (tsdfs[mask_proj] * w + sdf) / wp
                 rgbs[mask_proj] = (rgbs[mask_proj] * w[:, None] + rgb[mask_proj]) / wp[:, None]
-                # update weight
                 weights[mask_proj] = wp
 
             if return_rgb:
@@ -218,7 +394,7 @@ class GS2DMeshUtils:
 
         N = resolution
         voxel_size = (radius * 2 / N)
-        print(f"Computing sdf gird resolution {N} x {N} x {N}")
+        print(f"Computing sdf grid resolution {N} x {N} x {N}")
         print(f"Define the voxel_size as {voxel_size}")
         def sdf_function(x): return compute_unbounded_tsdf(x, inv_contraction, voxel_size)
         R = contract(normalize(model.get_xyz)).norm(dim=-1).cpu().numpy()
@@ -234,14 +410,14 @@ class GS2DMeshUtils:
             inv_contraction=inv_contraction,
         )
 
-        # coloring the mesh
+        # 给网格上色
         torch.cuda.empty_cache()
         mesh = mesh.as_open3d
         print("texturing mesh ... ")
         _, rgbs = compute_unbounded_tsdf(torch.tensor(np.asarray(mesh.vertices)).float().cuda(), inv_contraction=None, voxel_size=voxel_size, return_rgb=True)
         mesh.vertex_colors = o3d.utility.Vector3dVector(rgbs.cpu().numpy())
         return mesh
-
+    
     @staticmethod
     def to_cam_open3d(viewpoint_stack):
         camera_traj = []

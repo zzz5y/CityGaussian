@@ -70,6 +70,12 @@ class Camera:
     def device(self):
         return self.R.device
 
+    def to_device(self, device: torch.device):
+        for field in self.__dataclass_fields__:
+            value = getattr(self, field)
+            if isinstance(value, torch.Tensor):
+                setattr(self, field, value.to(device))
+        return self
 
 @dataclass
 class Cameras:

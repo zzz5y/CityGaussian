@@ -5,8 +5,9 @@ import open3d as o3d
 from jsonargparse import CLI
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.utils.gs2d_mesh_utils import GS2DMeshUtils, post_process_mesh
-
-
+import pickle
+import gc
+import copy
 @dataclass
 class CLIArgs:
     model_path: str
@@ -88,39 +89,59 @@ def main():
         output_path=os.getcwd(),
         global_rank=0,
     ).get_outputs()
+    
+    
+    #device_cpu=torch.device("cpu")
     cameras = [i.to_device(device) for i in dataparser_outputs.train_set.cameras]
+    print('cameras: ', type(cameras), " with count: ", len(cameras),"camera device: ", cameras[0].device)
+    #N = 10  # 每5个保留一个
+    #cameras_list = cameras[::N]  # 直接使用切片
+    # N = 10  # 每5个保留一个
+    # # 使用列表推导式和步长切片获取每第N个元素
+    # cameras_list = copy.deepcopy(cameras[::N])
+    # del cameras
+    # torch.cuda.empty_cache()
+    # print('cameras_list: ', type(cameras_list), " with count: ", len(cameras_list))
+    
 
+    
     # set the active_sh to 0 to export only diffuse texture
     model.active_sh_degree = 0
     bg_color = torch.zeros((3,), dtype=torch.float, device=device)
-    maps = GS2DMeshUtils.render_views(model, renderer, cameras, bg_color)
-    bound = GS2DMeshUtils.estimate_bounding_sphere(cameras)
+    
+    
+    #GS2DMeshUtils.render_views(model, renderer, cameras, bg_color)
+    print(f"render:{renderer}")
+    maps=render_views_with_tmp = GS2DMeshUtils.render_views_with_tmp(model, renderer, cameras, bg_color,tmp_path='./tmp')
+    # maps = GS2DMeshUtils.render_views(model, renderer, cameras, bg_color)
+    # bound = GS2DMeshUtils.estimate_bounding_sphere(cameras)
+    # # maps = GS2DMeshUtils.render_views(model, renderer, cameras_list, bg_color)
+    # # bound = GS2DMeshUtils.estimate_bounding_sphere(cameras_list)
+    # if args.unbounded:
+    #     name = 'fuse_unbounded.ply'
+    #     mesh = GS2DMeshUtils.extract_mesh_unbounded(
+    #         maps=maps,
+    #         bound=bound,
+    #         cameras=cameras,#cameras
+    #         model=model,
+    #         resolution=args.mesh_res,
+    #     )
+    # else:
+    #     name = 'fuse.ply'
+    #     _, radius = bound
+    #     depth_trunc = (radius * 2.0) if args.depth_trunc < 0 else args.depth_trunc
+    #     voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size < 0 else args.voxel_size
+    #     sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
+    #     mesh = GS2DMeshUtils.extract_mesh_bounded(maps=maps, cameras=cameras, voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
+    #     #mesh = GS2DMeshUtils.extract_mesh_bounded(maps=maps, cameras=cameras, voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
+    # output_dir = args.model_path
+    # if os.path.isfile(output_dir):
+    #     output_dir = os.path.dirname(output_dir)
+    # o3d.io.write_triangle_mesh(os.path.join(output_dir, name), mesh)
+    # print("mesh saved at {}".format(os.path.join(output_dir, name)))
 
-    if args.unbounded:
-        name = 'fuse_unbounded.ply'
-        mesh = GS2DMeshUtils.extract_mesh_unbounded(
-            maps=maps,
-            bound=bound,
-            cameras=cameras,
-            model=model,
-            resolution=args.mesh_res,
-        )
-    else:
-        name = 'fuse.ply'
-        _, radius = bound
-        depth_trunc = (radius * 2.0) if args.depth_trunc < 0 else args.depth_trunc
-        voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size < 0 else args.voxel_size
-        sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
-        mesh = GS2DMeshUtils.extract_mesh_bounded(maps=maps, cameras=cameras, voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
-
-    output_dir = args.model_path
-    if os.path.isfile(output_dir):
-        output_dir = os.path.dirname(output_dir)
-    o3d.io.write_triangle_mesh(os.path.join(output_dir, name), mesh)
-    print("mesh saved at {}".format(os.path.join(output_dir, name)))
-
-    # post-process the mesh and save, saving the largest N clusters
-    print("post-processing...")
-    mesh_post = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
-    o3d.io.write_triangle_mesh(os.path.join(output_dir, name.replace('.ply', '_post.ply')), mesh_post)
-    print("mesh post processed saved at {}".format(os.path.join(output_dir, name.replace('.ply', '_post.ply'))))
+    # # post-process the mesh and save, saving the largest N clusters
+    # print("post-processing...")
+    # mesh_post = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
+    # o3d.io.write_triangle_mesh(os.path.join(output_dir, name.replace('.ply', '_post.ply')), mesh_post)
+    # print("mesh post processed saved at {}".format(os.path.join(output_dir, name.replace('.ply', '_post.ply'))))

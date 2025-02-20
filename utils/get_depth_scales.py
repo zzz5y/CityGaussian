@@ -50,61 +50,67 @@ def get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, a
     pts_idx = pts_idx[mask]
     valid_xys = image_meta.xys[mask]
 
-    # reduce outliers
-    pts_errors = points3d_error_ordered[pts_idx]
-    valid_errors = pts_errors < args.point_max_error
-    pts_idx = pts_idx[valid_errors]
-    valid_xys = valid_xys[valid_errors]
+    if len(valid_xys)>0:
+    
+        # reduce outliers
+        pts_errors = points3d_error_ordered[pts_idx]
+        valid_errors = pts_errors < args.point_max_error
+        pts_idx = pts_idx[valid_errors]
+        valid_xys = valid_xys[valid_errors]
 
-    if len(pts_idx) > 0:
-        # get 3D point xyz
-        pts = points3d_ordered[pts_idx]
+        if len(pts_idx) > 0:
+            # get 3D point xyz
+            pts = points3d_ordered[pts_idx]
+        else:
+            pts = np.array([0, 0, 0])
+
+        # transform from world to camera
+        R = qvec2rotmat(image_meta.qvec)
+        pts = np.dot(pts, R.T) + image_meta.tvec
+
+        invcolmapdepth = 1. / pts[..., 2]
+        invmonodepthmap = np.load(os.path.join(args.depth_dir, "{}.npy".format(image_meta.name)))  # already normalized
+
+        if invmonodepthmap is None:
+            return None
+
+        # if invmonodepthmap.ndim != 2:
+        #     invmonodepthmap = invmonodepthmap[..., 0]
+
+        # invmonodepthmap = invmonodepthmap.astype(np.float32)
+        s = invmonodepthmap.shape[0] / cam_intrinsic.height
+
+        # xys inside image
+        maps = (valid_xys * s).astype(np.float32)
+        valid = (
+                (maps[..., 0] >= 0) *
+                (maps[..., 1] >= 0) *
+                (maps[..., 0] < cam_intrinsic.width * s) *
+                (maps[..., 1] < cam_intrinsic.height * s) * (invcolmapdepth > 0))
+
+        if valid.sum() > 10 and (invcolmapdepth.max() - invcolmapdepth.min()) > 1e-3:
+            maps = maps[valid, :]
+            # depth values from colmap
+            invcolmapdepth = invcolmapdepth[valid]
+            # get depth values of these 2D points from the depth map
+            invmonodepth = cv2.remap(invmonodepthmap, maps[..., 0], maps[..., 1], interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)[..., 0]
+
+            ## Median / dev
+            t_colmap = np.median(invcolmapdepth)
+            s_colmap = np.mean(np.abs(invcolmapdepth - t_colmap))
+
+            t_mono = np.median(invmonodepth)
+            s_mono = np.mean(np.abs(invmonodepth - t_mono))
+            scale = s_colmap / s_mono
+            offset = t_colmap - t_mono * scale
+        else:
+            scale = 0
+            offset = 0
+        
+        return {"image_name": image_meta.name, "scale": scale, "offset": offset}
+
     else:
-        pts = np.array([0, 0, 0])
-
-    # transform from world to camera
-    R = qvec2rotmat(image_meta.qvec)
-    pts = np.dot(pts, R.T) + image_meta.tvec
-
-    invcolmapdepth = 1. / pts[..., 2]
-    invmonodepthmap = np.load(os.path.join(args.depth_dir, "{}.npy".format(image_meta.name)))  # already normalized
-
-    if invmonodepthmap is None:
-        return None
-
-    # if invmonodepthmap.ndim != 2:
-    #     invmonodepthmap = invmonodepthmap[..., 0]
-
-    # invmonodepthmap = invmonodepthmap.astype(np.float32)
-    s = invmonodepthmap.shape[0] / cam_intrinsic.height
-
-    # xys inside image
-    maps = (valid_xys * s).astype(np.float32)
-    valid = (
-            (maps[..., 0] >= 0) *
-            (maps[..., 1] >= 0) *
-            (maps[..., 0] < cam_intrinsic.width * s) *
-            (maps[..., 1] < cam_intrinsic.height * s) * (invcolmapdepth > 0))
-
-    if valid.sum() > 10 and (invcolmapdepth.max() - invcolmapdepth.min()) > 1e-3:
-        maps = maps[valid, :]
-        # depth values from colmap
-        invcolmapdepth = invcolmapdepth[valid]
-        # get depth values of these 2D points from the depth map
-        invmonodepth = cv2.remap(invmonodepthmap, maps[..., 0], maps[..., 1], interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)[..., 0]
-
-        ## Median / dev
-        t_colmap = np.median(invcolmapdepth)
-        s_colmap = np.mean(np.abs(invcolmapdepth - t_colmap))
-
-        t_mono = np.median(invmonodepth)
-        s_mono = np.mean(np.abs(invmonodepth - t_mono))
-        scale = s_colmap / s_mono
-        offset = t_colmap - t_mono * scale
-    else:
-        scale = 0
-        offset = 0
-    return {"image_name": image_meta.name, "scale": scale, "offset": offset}
+        return {"image_name": image_meta.name, "scale": 0, "offset": 0}
 
 
 # depth_param_list = [get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, args) for key in images]

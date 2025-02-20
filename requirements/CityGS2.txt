@@ -1,0 +1,1 @@
+git+https://github.com/DekuLiuTesla/diff-gaussian-rasterization.git@82c31d7ad780f7ef74c4f9485985895e9da2c93a

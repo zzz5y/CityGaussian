@@ -38,6 +38,7 @@ class GaussianModelLoader:
         # find checkpoint with max iterations
         load_from = None
         previous_checkpoint_iteration = -1
+        #print('checkpoint_dir: ', checkpoint_dir)
         for i in glob.glob(os.path.join(checkpoint_dir, "*.ckpt")):
             try:
                 checkpoint_iteration = int(i[i.rfind("=") + 1:i.rfind(".")])

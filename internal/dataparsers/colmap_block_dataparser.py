@@ -162,6 +162,7 @@ class ColmapBlockDataParser(ColmapDataParser):
 
         # parse colmap sparse model
         for idx, key in enumerate(images):
+            #if idx %20==0:
             # extract image and its correspond camera
             extrinsics = images[key]
             intrinsics = cameras[extrinsics.camera_id]
@@ -311,10 +312,63 @@ class ColmapBlockDataParser(ColmapDataParser):
         # build split indices
         training_set_indices, validation_set_indices = self.build_split_indices(image_name_list)
 
+        
         # split
         image_set = []
+        
+        # 假设 camera 数量是 colmap_cameras_count
+        colmap_cameras_count = len(R)  # 或者从 colmap 数据中获取实际的相机数量
+
         for index_list in [training_set_indices, validation_set_indices]:
+            # 根据相机数量限制 sampled_indices
+            # sampled_indices = index_list[:len(index_list)//20*20:20]
+
+            # 确保不会使用超出相机数量的索引
+            # sampled_indices = [idx for idx in sampled_indices if idx < colmap_cameras_count]
+
+            #indices = torch.tensor(sampled_indices, dtype=torch.int)
             indices = torch.tensor(index_list, dtype=torch.int)
+            cameras = Cameras(
+                R=R[indices],
+                T=T[indices],
+                fx=fx[indices],
+                fy=fy[indices],
+                cx=cx[indices],
+                cy=cy[indices],
+                width=width[indices],
+                height=height[indices],
+                appearance_id=appearance_id[indices],
+                normalized_appearance_id=normalized_appearance_id[indices],
+                distortion_params=None,
+                camera_type=camera_type[indices],
+            )
+
+            image_set.append(ImageSet(
+                image_names=[image_name_list[i] for i in index_list],
+                image_paths=[image_path_list[i] for i in index_list],
+                mask_paths=[mask_path_list[i] for i in index_list],
+                cameras=cameras
+            ))
+            
+            # image_set.append(ImageSet(
+            #     image_names=[image_name_list[i] for i in sampled_indices],
+            #     image_paths=[image_path_list[i] for i in sampled_indices],
+            #     mask_paths=[mask_path_list[i] for i in sampled_indices],
+            #     cameras=cameras
+            # ))
+        
+        
+        
+        
+        '''
+        for index_list in [training_set_indices, validation_set_indices]:
+            #indices = torch.tensor(index_list, dtype=torch.int)
+            
+            # 每隔 20 个索引取一个，保留原数据的 1/20
+            # sampled_indices = index_list[:len(index_list)//20*20:20]  # 确保不会超出范围
+            
+            # indices = torch.tensor(sampled_indices, dtype=torch.int)
+            
             cameras = Cameras(
                 R=R[indices],
                 T=T[indices],
@@ -335,7 +389,9 @@ class ColmapBlockDataParser(ColmapDataParser):
                 mask_paths=[mask_path_list[i] for i in index_list],
                 cameras=cameras
             ))
-
+        '''
+        
+        
         if self.params.points_from == "random":
             print("generate {} random points".format(self.params.n_random_points))
             scene_center = torch.mean(image_set[0].cameras.camera_center, dim=0)
@@ -349,7 +405,9 @@ class ColmapBlockDataParser(ColmapDataParser):
             xyz = basic_pcd.points
             rgb = basic_pcd.colors
             print("load {} points from {}".format(xyz.shape[0], self.params.ply_file))
-
+        
+        # image_set[0]=image_set[0][::20]
+        # image_set[1]=image_set[1][::20]
         # print information
         print("[colmap dataparser] train set images: {}, val set images: {}, loaded mask: {}".format(
             len(image_set[0]),
